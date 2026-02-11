@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Check-in Universal</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Check-in Universal</h1>
+
+    <!-- Painel de Configuração / Upload -->
+    <div id="settings-panel" class="settings-panel">
+      <div class="settings-header" id="settings-toggle">
+        <h3>⚙️ Configurações</h3>
+        <span class="toggle-icon" id="toggle-icon">▼</span>
+      </div>
+      <div class="settings-body" id="settings-body">
+        <p class="settings-description">Envie uma planilha XLSX e informe o nome das duas colunas que serão usadas para identificar os participantes.</p>
+        <div class="upload-form">
+          <div class="form-group">
+            <label for="col1-input">Nome da Coluna 1 (ex: Nome)</label>
+            <input id="col1-input" type="text" placeholder="Nome" value="{{ config.get('col1_name', '') if config else '' }}" />
+          </div>
+          <div class="form-group">
+            <label for="col2-input">Nome da Coluna 2 (ex: Telefone)</label>
+            <input id="col2-input" type="text" placeholder="Telefone" value="{{ config.get('col2_name', '') if config else '' }}" />
+          </div>
+          <div class="form-group form-group-check">
+            <label class="checkbox-label">
+              <input id="has-qr-check" type="checkbox" {{ 'checked' if config and config.get('has_qr') else '' }} />
+              <span>A planilha tem coluna de QR Code?</span>
+            </label>
+          </div>
+          <div class="form-group" id="qr-col-group" style="display:none;">
+            <label for="qr-col-input">Nome da Coluna do QR Code</label>
+            <input id="qr-col-input" type="text" placeholder="Ex: QRCode" value="{{ config.get('qr_col_name', '') if config else '' }}" />
+          </div>
+          <div class="form-group">
+            <label for="xlsx-file">Arquivo XLSX</label>
+            <input id="xlsx-file" type="file" accept=".xlsx,.xls" />
+          </div>
+          <button id="btn-upload" class="btn-primary">📤 Enviar Planilha</button>
+          <div id="upload-status"></div>
+        </div>
+        <div class="current-config" id="current-config">
+          <!-- preenchido via JS -->
+        </div>
+        <div class="settings-actions">
+          <button id="btn-export-csv" class="btn-export">📥 Exportar CSV</button>
+          <button id="btn-export-json" class="btn-export">📥 Exportar JSON</button>
+          <button id="btn-reset-checkins" class="btn-danger-outline">🗑️ Resetar todos os check-ins</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Estatísticas -->
+    <div class="stats-container">
+      <div class="stat-card">
+        <div class="stat-value" id="total-participants">0</div>
+        <div class="stat-label">Total de Participantes</div>
+      </div>
+      <div class="stat-card stat-success">
+        <div class="stat-value" id="checked-in-count">0</div>
+        <div class="stat-label">Check-ins Realizados</div>
+      </div>
+      <div class="stat-card stat-pending">
+        <div class="stat-value" id="pending-count">0</div>
+        <div class="stat-label">Pendentes</div>
+      </div>
+    </div>
+
+    <!-- Scanner QR (visível apenas se has_qr) -->
+    <div class="scanner" id="scanner-section" style="display:none;">
+      <h3>📷 Scanner QR Code</h3>
+      <video id="video" playsinline></video>
+      <div class="manual-input">
+        <input id="external-id-input" type="text" placeholder="ou cole o ID aqui..." />
+        <button id="btn-mark-manual" class="btn-primary">✓ Marcar</button>
+      </div>
+      <div id="scan-result"></div>
+    </div>
+
+    <!-- Controles -->
+    <div class="controls">
+      <input id="search" type="text" placeholder="🔍 Pesquisar participante..." />
+      <input id="fiscal-name" type="text" placeholder="👤 Seu nome (fiscal)" />
+      <button id="btn-refresh" class="btn-primary">🔄 Atualizar Lista</button>
+    </div>
+
+    <!-- Tabela -->
+    <div class="table-header">
+      <h2>Lista de Participantes</h2>
+      <div class="page-size-selector">
+        <label for="page-size-select">Items por página:</label>
+        <select id="page-size-select">
+          <option value="5">5</option>
+          <option value="10" selected>10</option>
+          <option value="20">20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="table-wrapper">
+      <table id="participants-table">
+        <thead>
+          <tr>
+            <th id="th-col1">Coluna 1</th>
+            <th id="th-col2">Coluna 2</th>
+            <th>Status</th>
+            <th>Ação</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div id="pagination-controls">
+      <button id="btn-prev" class="btn-pagination">‹ Anterior</button>
+      <span id="page-info">Página 1 de 1</span>
+      <button id="btn-next" class="btn-pagination">Próxima ›</button>
+    </div>
+
+    <div id="toast" class="hidden"></div>
+
+    <!-- Modal de Confirmação -->
+    <div id="confirm-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2>Confirmar Check-in</h2>
+        <div id="confirm-participant-info"></div>
+        <div class="modal-buttons">
+          <button id="btn-confirm-yes" class="btn-primary">✓ Sim, fazer check-in</button>
+          <button id="btn-confirm-no" class="btn-secondary">✗ Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p style="text-align: center; margin-top: 20px; color: #666;">
+      Desenvolvido por <strong><a href="https://github.com/gklein7" target="_blank">Gabriel Klein</a></strong>
+    </p>
+  </footer>
+
+  <script src="/static/main.js?v=5"></script>
+</body>
+</html>
