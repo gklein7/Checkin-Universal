@@ -46,15 +46,15 @@
 ## Screenshots
 
 <p align="center">
-  <img src="screenshots/dashboard.png" alt="Dashboard" width="80%" />
+  <img src="screenshots/dashboard.png" alt="Dashboard" width="30%" />
 </p>
 
 <p align="center">
-  <img src="screenshots/settings.png" alt="Painel de Configurações" width="80%" />
+  <img src="screenshots/settings.png" alt="Painel de Configurações" width="30%" />
 </p>
 
 <p align="center">
-  <img src="screenshots/mobile.png" alt="Versão Mobile" width="40%" />
+  <img src="screenshots/mobile.png" alt="Versão Mobile" width="30%" />
 </p>
 
 ---
