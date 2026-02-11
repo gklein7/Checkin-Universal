@@ -402,6 +402,80 @@ button.unmark:hover {
   box-shadow: var(--shadow-sm);
 }
 
+.scanner-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.btn-camera {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-camera:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+.btn-camera:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.btn-camera-active {
+  background: var(--danger-color);
+}
+
+.btn-camera-active:hover {
+  background: #b91c1c !important;
+}
+
+.btn-camera-loading {
+  background: var(--text-secondary);
+}
+
+.btn-camera-error {
+  background: #f59e0b;
+  color: #1f2937;
+}
+
+.btn-camera-error:hover {
+  background: #d97706 !important;
+}
+
+.camera-status {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.status-active {
+  color: var(--success-color);
+  animation: pulse 1.5s infinite;
+}
+
+.status-loading {
+  color: var(--primary-color);
+}
+
+.status-error {
+  color: var(--danger-color);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 #video {
   width: 100%;
   max-width: 400px;

@@ -76,7 +76,11 @@
     <!-- Scanner QR (visível apenas se has_qr) -->
     <div class="scanner" id="scanner-section" style="display:none;">
       <h3>📷 Scanner QR Code</h3>
-      <video id="video" playsinline></video>
+      <div class="scanner-controls">
+        <button id="btn-toggle-camera" class="btn-camera">📸 Ativar Câmera</button>
+        <span id="camera-status" class="camera-status">Câmera desligada</span>
+      </div>
+      <video id="video" playsinline autoplay muted></video>
       <div class="manual-input">
         <input id="external-id-input" type="text" placeholder="ou cole o ID aqui..." />
         <button id="btn-mark-manual" class="btn-primary">✓ Marcar</button>
@@ -147,6 +151,6 @@
     </p>
   </footer>
 
-  <script src="/static/main.js?v=5"></script>
+  <script src="/static/main.js?v=6"></script>
 </body>
 </html>

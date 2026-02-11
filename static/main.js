@@ -139,8 +139,6 @@ async function uploadXLSX() {
       updateScannerVisibility();
       fetchParticipants();
       toast(`Planilha carregada: ${data.total} participantes`, 3000);
-      // Iniciar scanner se QR habilitado
-      if (currentConfig.has_qr) startScanner().catch(() => { });
     } else {
       statusEl.innerHTML = `<span class="upload-error">❌ ${data.error}</span>`;
     }
@@ -438,6 +436,8 @@ document.addEventListener('click', (ev) => {
     exportCSV();
   } else if (ev.target.id === 'btn-export-json') {
     exportJSON();
+  } else if (ev.target.id === 'btn-toggle-camera') {
+    toggleCamera();
   } else if (ev.target.id === 'settings-toggle' || ev.target.closest('#settings-toggle')) {
     toggleSettings();
   }
@@ -518,6 +518,45 @@ socket.on("participants_updated", () => {
 // --- QR Scanner ---
 let scanning = false;
 let scanInterval = null;
+let lastScannedCode = '';
+let lastScanTime = 0;
+const SCAN_COOLDOWN = 3000; // 3s entre leituras do mesmo código
+
+function updateCameraUI(state) {
+  const btn = document.getElementById('btn-toggle-camera');
+  const status = document.getElementById('camera-status');
+  if (!btn || !status) return;
+
+  switch (state) {
+    case 'off':
+      btn.textContent = '📸 Ativar Câmera';
+      btn.className = 'btn-camera';
+      status.textContent = 'Câmera desligada';
+      status.className = 'camera-status';
+      break;
+    case 'starting':
+      btn.textContent = '⏳ Conectando...';
+      btn.className = 'btn-camera btn-camera-loading';
+      btn.disabled = true;
+      status.textContent = 'Solicitando permissão...';
+      status.className = 'camera-status status-loading';
+      break;
+    case 'on':
+      btn.textContent = '⏹️ Desligar Câmera';
+      btn.className = 'btn-camera btn-camera-active';
+      btn.disabled = false;
+      status.textContent = '● Escaneando';
+      status.className = 'camera-status status-active';
+      break;
+    case 'error':
+      btn.textContent = '🔄 Tentar Novamente';
+      btn.className = 'btn-camera btn-camera-error';
+      btn.disabled = false;
+      status.textContent = '⚠️ Erro na câmera';
+      status.className = 'camera-status status-error';
+      break;
+  }
+}
 
 function stopScanner() {
   const video = document.getElementById('video');
@@ -533,28 +572,85 @@ function stopScanner() {
     cancelAnimationFrame(scanInterval);
     scanInterval = null;
   }
+  updateCameraUI('off');
 }
 
 async function startScanner() {
   const video = document.getElementById('video');
   if (!video) return;
-  if (!currentConfig.has_qr) return; // não iniciar se QR não habilitado
-  if (scanning) return; // já rodando
+  if (!currentConfig.has_qr) return;
+
+  // Se já está rodando, parar
+  if (scanning) {
+    stopScanner();
+    return;
+  }
+
+  updateCameraUI('starting');
+
+  // Verificar se o navegador suporta
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    updateCameraUI('error');
+    toast('Seu navegador não suporta acesso à câmera. Use HTTPS ou um navegador moderno.', 5000);
+    return;
+  }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    // Tentar câmera traseira primeiro, depois qualquer uma
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }
+      });
+    } catch (e) {
+      // Fallback: qualquer câmera disponível
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    }
+
     video.srcObject = stream;
-    video.setAttribute('playsinline', true);
-    await video.play();
+    video.setAttribute('playsinline', 'true');
+
+    // Esperar o vídeo estar pronto
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = () => {
+        video.play().then(resolve).catch(reject);
+      };
+      setTimeout(() => reject(new Error('Timeout ao iniciar vídeo')), 8000);
+    });
+
     scanning = true;
+    updateCameraUI('on');
     scanInterval = requestAnimationFrame(tick);
+    toast('Câmera ativada! Aponte para o QR Code.', 2000);
+
   } catch (err) {
-    console.error("Erro câmera", err);
-    toast("Impossível acessar câmera. Cole o ID manualmente.", 4000);
+    console.error('Erro câmera:', err);
+    updateCameraUI('error');
+
+    let msg = 'Erro ao acessar câmera.';
+    if (err.name === 'NotAllowedError') {
+      msg = 'Permissão de câmera negada. Verifique as configurações do navegador.';
+    } else if (err.name === 'NotFoundError') {
+      msg = 'Nenhuma câmera encontrada neste dispositivo.';
+    } else if (err.name === 'NotReadableError') {
+      msg = 'Câmera em uso por outro aplicativo. Feche e tente novamente.';
+    } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+      msg = 'Câmera requer HTTPS. Acesse via https:// para usar o scanner.';
+    }
+    toast(msg, 5000);
+  }
+}
+
+function toggleCamera() {
+  if (scanning) {
+    stopScanner();
+  } else {
+    startScanner();
   }
 }
 
 function tick() {
+  if (!scanning) return;
   const video = document.getElementById('video');
   if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
     scanInterval = requestAnimationFrame(tick);
@@ -568,32 +664,47 @@ function tick() {
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const code = jsQR(imageData.data, imageData.width, imageData.height);
+
   if (code) {
     const txt = code.data.trim();
-    const resultEl = document.getElementById('scan-result');
-    if (resultEl) resultEl.innerText = "QR lido: " + txt;
-    // Buscar participante pelo campo qr_code
-    const participant = allParticipants.find(p => p.qr_code === txt);
-    if (participant) {
-      markCheckin(participant.external_id);
-    } else {
-      // Tentar pelo external_id como fallback
-      markCheckin(txt);
-    }
-    setTimeout(() => {
+    const now = Date.now();
+
+    // Evitar leitura duplicada do mesmo código
+    if (txt !== lastScannedCode || (now - lastScanTime) > SCAN_COOLDOWN) {
+      lastScannedCode = txt;
+      lastScanTime = now;
+
       const resultEl = document.getElementById('scan-result');
-      if (resultEl) resultEl.innerText = "";
-    }, 1800);
+      if (resultEl) resultEl.innerText = 'QR lido: ' + txt;
+
+      const participant = allParticipants.find(p => p.qr_code === txt);
+      if (participant) {
+        markCheckin(participant.external_id);
+      } else {
+        markCheckin(txt);
+      }
+
+      setTimeout(() => {
+        const resultEl = document.getElementById('scan-result');
+        if (resultEl) resultEl.innerText = '';
+      }, 2500);
+    }
   }
   scanInterval = requestAnimationFrame(tick);
 }
 
 window.addEventListener('beforeunload', () => {
-  const video = document.getElementById('video');
-  try {
-    const stream = video?.srcObject;
-    if (stream) {
-      stream.getTracks().forEach(t => t.stop());
+  stopScanner();
+});
+
+// Reativar câmera se a aba voltar ao foco (mobile minimiza e destrói stream)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && scanning) {
+    // Stream pode ter sido destruída, reiniciar
+    const video = document.getElementById('video');
+    if (video && (!video.srcObject || video.srcObject.getTracks().every(t => t.readyState === 'ended'))) {
+      scanning = false;
+      startScanner();
     }
-  } catch (e) { }
+  }
 });
